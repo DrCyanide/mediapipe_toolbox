@@ -1,4 +1,5 @@
 import bpy
+import bmesh
 import json
 import os
 import addon_utils
@@ -39,9 +40,9 @@ bl_info = {
     "description": "Adds MediaPipe functionality for Blender in ways that speed up modeling, rigging, and animation."
 }
 
-hand_mapping_file = 'hand_rigify_mapping.json'
+hand_mapping_file = 'data/hand_rigify_mapping.json'
 hand_config_data = {}
-facemesh_mapping_file = 'facemesh_rigify_mapping.json'
+facemesh_mapping_file = 'data/facemesh_rigify_mapping.json'
 facemesh_config_data = {}
 
 def load_configs():
@@ -206,6 +207,18 @@ class RipFacemeshMouthOperator(bpy.types.Operator):
     bl_label = 'Rip mouth open'
     bl_options = {'REGISTER', 'UNDO'} # Enable undo for operations?
 
+    def selectVertices(self, facemesh):
+        # for vert in facemesh.vertices:
+        #     vert.select = False
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_mode(type='VERT')
+        bpy.ops.mesh.select_all(action='DESELECT')
+
+        # Counter-intuitively, you select the vertexes in Object mode, then switch to Edit mode
+        bpy.ops.object.mode_set(mode='OBJECT')
+        for index in facemesh_config_data['rip_verts']['mouth']:
+            facemesh.vertices[index].select = True
+
     def execute(self, context):
         facemesh = context.scene.mp_facemesh
 
@@ -213,14 +226,23 @@ class RipFacemeshMouthOperator(bpy.types.Operator):
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.mesh.select_mode(type='VERT')
 
-        # Counter-intuitively, you select the vertexes in Object mode, then switch to Edit mode
-        bpy.ops.object.mode_set(mode='OBJECT')
-        for vert in facemesh.vertices:
-            vert.select = False
-        for index in facemesh_config_data['rip_verts']['mouth']:
-            facemesh.vertices[index].select = True
+        # TODO: See if I can avoid this separate meshes step now
+        self.selectVertices(facemesh)
         bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.mesh.rip()
+        bpy.ops.mesh.separate(type='SELECTED') # Equivalent of P (separate menu) and "Separate Selection". Creates another object in the scene collection that should get cleaned up. Was encountering a "cannot rip selected faces" error without this step
+
+        # Both the facemesh and the separate are selected. Reset the selection to just the facemesh. 
+        selectObject(facemesh.name, 'MESH')
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_mode(type='VERT')
+
+        self.selectVertices(facemesh) # Reselect the vertices
+
+        bpy.ops.object.mode_set(mode='EDIT')
+        # Operator bpy.ops.mesh.rip.poll() failed, context is incorrect
+        # bpy.ops.mesh.rip() # V to rip 
+        # bpy.ops.mesh.rip('INVOKE_DEFAULT') # V to rip 
+        bpy.ops.mesh.rip_move('INVOKE_DEFAULT', MESH_OT_rip={"mirror":False, "use_proportional_edit":False, "proportional_edit_falloff":'SMOOTH', "proportional_size":1, "use_proportional_connected":False, "use_proportional_projected":False, "release_confirm":False, "use_accurate":False, "use_fill":False}, TRANSFORM_OT_translate={"value":(0, 0, 0.000381055), "orient_axis_ortho":'X', "orient_type":'GLOBAL', "orient_matrix":((1, 0, 0), (0, 1, 0), (0, 0, 1)), "orient_matrix_type":'GLOBAL', "constraint_axis":(False, False, True), "mirror":False, "use_proportional_edit":False, "proportional_edit_falloff":'SMOOTH', "proportional_size":1, "use_proportional_connected":False, "use_proportional_projected":False, "snap":False, "snap_elements":{'INCREMENT'}, "use_snap_project":False, "snap_target":'CLOSEST', "use_snap_self":False, "use_snap_edit":False, "use_snap_nonedit":False, "use_snap_selectable":False, "snap_point":(0, 0, 0), "snap_align":False, "snap_normal":(0, 0, 0), "gpencil_strokes":False, "cursor_transform":False, "texture_space":False, "remove_on_cancel":False, "view2d_edge_pan":False, "release_confirm":False, "use_accurate":False, "use_automerge_and_split":False})
 
         return {'FINISHED'}
 
